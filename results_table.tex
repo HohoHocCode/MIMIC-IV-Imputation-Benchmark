@@ -1,0 +1,36 @@
+\begin{table}[h]
+\centering
+\caption{So sánh hiệu năng Imputation trên D1 (Large) và D2 (High-Res)}
+\label{tab:results_dual}
+\begin{tabular}{llcccc}
+\toprule
+\textbf{Algorithm} & \textbf{Cat.} & \multicolumn{2}{c}{\textbf{D1 (546k)}} & \multicolumn{2}{c}{\textbf{D2 (85k)}} \\
+\cmidrule(r){3-4} \cmidrule(l){5-6}
+ & & NRMSE & Time(ms) & NRMSE & Time(ms) \\
+\midrule
+RLSP (K=5, PC=2) [Tensor] & Local & 0.9743 & 15251.8 & 0.7037 & 834.6 \\
+BGS (MaxK=10) [Tensor] & Local & 0.9831 & 19913.4 & 0.7098 & 1063.8 \\
+SVD (Rank=10) [Tensor] & Global & 0.9392 & 3733.5 & 0.8312 & 1177.9 \\
+BPCA [Tensor] & Global & 0.9643 & 2349.4 & 0.9268 & 495.4 \\
+LLS (K=5) [Tensor] & Local & 0.9841 & 14352.6 & 0.6617 & 563.5 \\
+ILLS (K=5) [Tensor] & Local & 0.9917 & 70656.9 & 0.6351 & 2521.2 \\
+KNN (K=5, tau=1.000000) [Tensor] & Local & 0.9739 & 14427.4 & 0.7100 & 589.8 \\
+SKNN (K=5) [Tensor] & Local & 0.9987 & 301.2 & 1.0000 & 67.5 \\
+IKNN (K=5) [Tensor] & Local & 0.9712 & 124997.0 & 0.6704 & 4523.7 \\
+LS (K=5) & Local & 0.9987 & 300.2 & 1.0000 & 61.3 \\
+SLLS (K=5) [Tensor] & Local & 1.0000 & 209.6 & 1.0000 & 46.9 \\
+GMC (K=5) [Tensor] & Local & 0.9888 & 5040.2 & 0.9781 & 917.1 \\
+CMVE (K=5) [Tensor] & Local & 0.9947 & 3122.1 & 0.9942 & 492.2 \\
+AMVI (MaxK=5) [Tensor] & Local & 0.9280 & 3619.1 & 0.6303 & 705.4 \\
+ARLS (P=5) [Tensor] & Local & 0.9114 & 1044.5 & 0.5996 & 396.7 \\
+LinCmb (k=5, r=10) [Tensor] & Hybrid & 0.9391 & 21571.5 & 0.7368 & 2780.3 \\
+POCSimpute (Liew et al. 2010) & Knowledge & 1.0114 & 582.5 & 1.0032 & 416.1 \\
+GOimpute (Tuikkala 2006) [Tensor] & Knowledge & 0.9791 & 14363.9 & 0.6947 & 564.6 \\
+iMISS (Hu 2006) [Tensor] & Knowledge & 0.9739 & 14421.1 & 0.7100 & 584.8 \\
+WeNNI (Johansson 2006) [Tensor] & Knowledge & 0.9791 & 14390.7 & 0.6947 & 569.8 \\
+WeNNI.BC (Ritz 2008) [Tensor] & Knowledge & 0.9808 & 14456.7 & 0.6947 & 575.0 \\
+metaMISS (ref [63]) [Tensor] & Knowledge & 0.9883 & 14317.0 & 0.8145 & 554.7 \\
+HAlimpute (Xiang 2008) [Tensor] & Knowledge & 0.9829 & 14318.6 & 0.1742 & 551.9 \\
+\bottomrule
+\end{tabular}
+\end{table}

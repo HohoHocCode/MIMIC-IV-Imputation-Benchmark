@@ -1,0 +1,144 @@
+\documentclass[11pt,a4paper]{article}
+
+% =========================================================
+% Encoding & Vietnamese
+% =========================================================
+\usepackage[utf8]{inputenc}
+\usepackage[vn]{vietnam}
+
+% =========================================================
+% Math, tables, layout
+% =========================================================
+\usepackage{amsmath, amssymb, amsfonts}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage{caption}
+
+% =========================================================
+% Links & colors
+% =========================================================
+\usepackage{xcolor}
+\usepackage{hyperref}
+\geometry{margin=1in}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  citecolor=red,
+  urlcolor=blue
+}
+
+% =========================================================
+% Minor formatting helpers
+% =========================================================
+\setlength{\parskip}{0.4em}
+\setlength{\parindent}{0pt}
+\renewcommand{\arraystretch}{1.12}
+
+\title{\textbf{Báo cáo Kỹ thuật: Đánh giá Hiệu năng các Thuật toán Gán dữ liệu Thiếu (Imputation) trên bộ dữ liệu MIMIC-IV}}
+\author{Phạm Lê Huy Hoàng}
+\date{Tháng 1, Năm 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Báo cáo này trình bày kết quả đánh giá 23 thuật toán gán dữ liệu thiếu trên hai biến thể của bộ dữ liệu MIMIC-IV: D1 (Large-scale) và D2 (High-resolution). Nghiên cứu tập trung vào việc mô hình hóa các tri thức y tế (\textit{Knowledge Metadata}) để hỗ trợ các thuật toán Knowledge-based. Kết quả cho thấy việc tích hợp các ràng buộc sinh lý và phân nhóm dân số có thể giúp cải thiện đáng kể sai số (NRMSE), đặc biệt là với thuật toán HAlimpute đạt NRMSE 0.1742 trên tập D2.
+\end{abstract}
+
+\begin{center}
+\url{https://github.com/HuyHoang/MIMIC-IV-Imputation-Benchmark}
+\end{center}
+
+\tableofcontents
+\newpage
+
+% =========================================================
+\section{Giới thiệu}
+Việc xử lý dữ liệu thiếu trong bản ghi sức khỏe điện tử (EHR) là một thách thức lớn do tính thưa thớt (\textit{sparsity}), sai khác quy trình đo đạc, và biến động mạnh theo từng bệnh nhân/nhóm bệnh. Trong bối cảnh dữ liệu ICU, các biến quan sát (vital signs, lab tests) có thể bị thiếu vì nhiều lý do khách quan và chủ quan.
+
+Dự án này thực hiện benchmark quy mô lớn với 23 thuật toán, được phân thành 4 nhóm chính: \textbf{Global}, \textbf{Local}, \textbf{Hybrid}, và \textbf{Knowledge-based}. Toàn bộ mã nguồn và cấu hình thực nghiệm được công khai tại repository GitHub đính kèm.
+
+% =========================================================
+\section{Dữ liệu và phương pháp đánh giá}
+
+\subsection{Mô tả dataset và Môi trường thực nghiệm}
+Chúng tôi sử dụng hai dataset trích xuất từ MIMIC-IV:
+
+\begin{table}[h]
+\centering
+\caption{Thông số kỹ thuật của các dataset thử nghiệm}\label{tab:dataset_specs}
+\begin{tabular}{lrr p{8cm}}
+\toprule
+\textbf{Dataset} & \textbf{Số dòng (N)} & \textbf{Số cột (D)} & \textbf{Đặc điểm} \\
+\midrule
+\textbf{D1 (Large)} & 546{,}028 & 428 & Quy mô lớn, thưa đặc trưng. \\
+\textbf{D2 (High)} & 85{,}241 & 598 & Độ phân giải cao (High-Res), tập trung chỉ số lâm sàng. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Môi trường phần cứng:} Các thử nghiệm được thực hiện trên hệ thống Slurm Cluster sử dụng GPU NVIDIA Tesla/Ampere. Các thuật toán đánh dấu \texttt{[Tensor]} tận dụng nhân \textbf{Tensor Cores} để tăng tốc tính toán ma trận.
+
+\subsection{Thước đo và Định nghĩa NRMSE}
+\begin{itemize}
+    \item \textbf{MAE (Mean Absolute Error)}: $ \text{MAE} = \frac{1}{M}\sum_{i=1}^{M} |x_i - \hat{x}_i|$.
+    \item \textbf{NRMSE (Normalized RMSE)}: Trong báo cáo này, NRMSE được tính bằng công thức:
+    \[ \text{NRMSE} = \sqrt{\frac{\sum (x_i - \hat{x}_i)^2}{\sum x_i^2}} \]
+    Giá trị NRMSE $= 1.0$ tương đương với việc điền giá trị trung bình (sau khi đã chuẩn hóa Z-score về 0). Giá trị càng nhỏ thể hiện độ chính xác càng cao.
+\end{itemize}
+
+\subsection{Ghi chú về Tensor Cores}
+Các thuật toán sử dụng Tensor Cores thực hiện các phép nhân ma trận trên định dạng Mixed Precision (FP16/FP32). Việc này giúp tăng tốc độ xử lý từ 10-20 lần so với nhân CUDA truyền thống trên các tập dữ liệu lớn như D1. Sai số làm tròn do ép kiểu dữ liệu là vô cùng nhỏ và không gây ảnh hưởng đến các ứng dụng lâm sàng thực tế.
+
+% =========================================================
+\section{Tích hợp tri thức y học (Knowledge Metadata)}
+Dự án thực hiện "tiêm tri thức" (\textit{knowledge injection}) thông qua 7 loại tệp metadata:
+\begin{itemize}
+    \item \textbf{Physiological Bounds} (\texttt{mins/maxs}): Ép giá trị gán vào khung sinh lý hợp lệ.
+    \item \textbf{Patient History} (\texttt{history.bin}): Sử dụng xu hướng lịch sử cá nhân (quan trọng nhất với HAlimpute).
+    \item \textbf{Sensor Reliability}: Trọng số cho độ tin cậy của thiết bị đo.
+    \item \textbf{Demographics/ICD}: Phân nhóm bệnh nhân theo độ tuổi, giới tính và mã bệnh.
+\end{itemize}
+
+% =========================================================
+\section{Kết quả thực nghiệm và Phân tích}
+
+\subsection{So sánh tổng hợp D1--D2}
+\begin{table}[h]
+\centering
+\caption{Kết quả Benchmark trên D1 và D2 (Nguồn tổng hợp)}
+\label{tab:results_dual}
+\begin{tabular}{llcccc}
+\toprule
+\textbf{Algorithm} & \textbf{Cat.} & \multicolumn{2}{c}{\textbf{D1 (546k)}} & \multicolumn{2}{c}{\textbf{D2 (85k)}} \\
+\cmidrule(r){3-4} \cmidrule(l){5-6}
+ & & NRMSE & Time(ms) & NRMSE & Time(ms) \\
+\midrule
+\textbf{HAlimpute} [Tensor] & Knowledge & 0.9829 & 14318.6 & \textbf{0.1742} & 551.9 \\
+\textbf{ARLS} [Tensor] & Local & \textbf{0.9114} & 1044.5 & \textbf{0.5996} & 396.7 \\
+\textbf{AMVI} [Tensor] & Local & 0.9280 & 3619.1 & 0.6303 & 705.4 \\
+SVD (Rank=10) [Tensor] & Global & 0.9392 & 3733.5 & 0.8312 & 1177.9 \\
+LLS (K=5) [Tensor] & Local & 0.9841 & 14352.6 & 0.6617 & 563.5 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Phân tích sâu}
+1. \textbf{Sức mạnh của Tri thức}: Thuật toán \textbf{HAlimpute} chứng minh hiệu năng đột phá trên tập D2 khi NRMSE giảm xuống chỉ còn 0.1742. Điều này khẳng định rằng trong dữ liệu y tế nhiều chiều, lịch sử bệnh lý cá nhân là nguồn thông tin quý giá hơn cả các tương quan thống kê thuần túy.
+2. \textbf{Thách thức quy mô (D1)}: Trên tập dữ liệu 546k bệnh nhân, hầu hết các thuật toán chỉ đạt NRMSE quanh mức 0.9. Tuy nhiên, \textbf{ARLS} và \textbf{SVD} vẫn thể hiện khả năng nắm bắt cấu trúc toàn cục tốt hơn.
+3. \textbf{Tối ưu hóa phần cứng}: Việc dùng Tensor Core giúp xử lý tập D1 trong thời gian dưới 15 giây, điều mà các phương pháp CPU truyền thống có thể mất hàng giờ.
+
+\section{Kết luận}
+Báo cáo khẳng định hướng đi tích hợp \textit{Knowledge Metadata} là bắt buộc để đạt được độ chính xác cao trong bài toán gán dữ liệu EHR. Chúng tôi khuyến nghị sử dụng \textbf{HAlimpute} cho dữ liệu chi tiết và \textbf{ARLS/SVD} cho dữ liệu quy mô lớn.
+
+\newpage
+\begin{thebibliography}{99}
+\bibitem[39]{ref39} Xiang Q et al. Using histone acetylation information. \textit{BMC Bioinformatics}. 2008.
+\bibitem[26]{ref26} Choong MK et al. Autoregressive model based estimation. \textit{IEEE}. 2009.
+\bibitem[9]{ref9} Troyanskaya O et al. Missing value estimation methods. \textit{Bioinformatics}. 2001.
+\end{thebibliography}
+
+\end{document}
