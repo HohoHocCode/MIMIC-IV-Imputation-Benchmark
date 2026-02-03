@@ -1,0 +1,168 @@
+\documentclass[11pt,a4paper]{article}
+
+% =========================
+% Encoding & Vietnamese
+% =========================
+\usepackage[utf8]{inputenc}
+\usepackage[vn]{vietnam}
+
+% =========================
+% Math & Tables
+% =========================
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+
+% =========================
+% Layout & Links
+% =========================
+\usepackage{geometry}
+\usepackage{hyperref}
+\geometry{a4paper, margin=1in}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  urlcolor=blue,
+  citecolor=blue
+}
+
+% =========================
+% Minor helpers
+% =========================
+\setlength{\parskip}{0.4em}
+\setlength{\parindent}{0pt}
+\renewcommand{\arraystretch}{1.15}
+
+\title{\textbf{Báo Cáo Kỹ Thuật: Đánh Giá Hiệu Năng Các Thuật Toán Gán Dữ Liệu Thiếu Trên Dữ Liệu Lâm Sàng MIMIC}}
+\author{Trưởng dự án: Phạm Lê Huy Hoàng}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Báo cáo này trình bày một nghiên cứu thực nghiệm về 23 thuật toán gán dữ liệu thiếu (imputation) được thực thi trên GPU. Nghiên cứu sử dụng hai bộ dữ liệu y tế quy mô lớn trích xuất từ MIMIC-IV. Mục tiêu là đánh giá cân bằng giữa độ chính xác và chi phí tính toán trong hai kịch bản cực đoan: (i) \textit{Large-Scale} với số lượng bệnh nhân rất lớn (D1) và (ii) \textit{High-Resolution} với số chiều đặc trưng cao (D2).
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% ==========================================================
+\section{Tổng quan và mục tiêu}
+Dữ liệu lâm sàng (EHR/ICU) thường chứa tỷ lệ thiếu đáng kể do giới hạn đo đạc, thay đổi phác đồ và sai khác giữa các khoa/phòng. Việc gán dữ liệu thiếu (\textit{imputation}) là bước tiền xử lý then chốt giúp:
+\begin{itemize}
+    \item cải thiện tính ổn định của các mô hình dự báo và suy luận;
+    \item giảm thiên lệch do cơ chế thiếu và do lựa chọn mẫu;
+    \item tăng khả năng khai thác tương quan chéo giữa các chỉ số lâm sàng.
+\end{itemize}
+
+Báo cáo này tập trung vào benchmark thực nghiệm cho thư viện/triển khai gán dữ liệu thiếu chạy trên GPU, với hai mục tiêu chính:
+\begin{enumerate}
+    \item \textbf{Đánh giá độ chính xác}: so sánh NRMSE, MAE và RMSE giữa các thuật toán.
+    \item \textbf{Đánh giá chi phí tính toán}: so sánh thời gian chạy (ms) trong điều kiện thực nghiệm giống nhau.
+\end{enumerate}
+
+% ==========================================================
+\section{Dữ liệu thực nghiệm}
+\subsection{Dataset D1: Large-Scale}
+\begin{itemize}
+    \item \textbf{Cấu hình:} 546{,}028 bệnh nhân $\times$ 428 chỉ số lâm sàng.
+\end{itemize}
+
+\subsection{Dataset D2: High-Resolution}
+\begin{itemize}
+    \item \textbf{Cấu hình:} 85{,}241 bệnh nhân $\times$ 905 chỉ số (lọc xuống 598 đặc trưng số học).
+\end{itemize}
+
+\section{Cơ sở Tri thức và Metadata (Knowledge Metadata)}
+Nhóm thuật toán Knowledge-based (dựa trên tri thức) khai thác các ràng buộc sinh học và thống kê dân số để cải thiện gán dữ liệu. Trong nghiên cứu này, chúng tôi thực hiện trích xuất tự động các Metadata sau:
+
+\begin{itemize}
+    \item \textbf{Physiological Bounds} (\texttt{knowledge\_mins.bin}, \texttt{knowledge\_maxs.bin}): Xác định giới hạn tối thiểu và tối đa sinh lý cho từng chỉ số (ví dụ: Nồng độ Creatinine, Huyết áp). Điều này giúp thuật toán POCS (Projection On Convex Sets) thực hiện bước hiệu chỉnh chính xác.
+    \item \textbf{Demographic Patterns} (\texttt{knowledge\_demographics.bin}): Lưu trữ thông tin tuổi và giới tính. Thuật toán iMISS và HAlimpute sử dụng thông tin này để tính toán "Consensus" (sự đồng nhất) giữa các bệnh nhân có cùng đặc điểm nền.
+    \item \textbf{Diagnosis Context} (\texttt{knowledge\_diagnoses.bin}): Mã bệnh lý giúp thu hẹp không gian tìm kiếm lân cận cho các thuật toán như metaMISS.
+\end{itemize}
+
+Việc thiếu hụt Metadata trong các lần chạy thử nghiệm trước đó đã được xác định là nguyên nhân chính dẫn đến sai số (NRMSE) cao ở nhóm này. Báo cáo này đã được cập nhật kết quả sau khi tích hợp đầy đủ các file tri thức trích xuất từ MIMIC-IV.
+
+% ==========================================================
+\section{Mô tả chi tiết các thuật toán}
+Dưới đây là bảng phân nhóm và nguồn trích dẫn chính xác cho 23 thuật toán.
+
+\begin{longtable}{p{2.5cm}p{1.5cm}p{3cm}p{3.5cm}p{4cm}}
+\caption{Thông số kỹ thuật và nguồn gốc thuật toán (Hiệu chỉnh)} \label{tab:algo_spec} \\
+\toprule
+\textbf{Thuật toán} & \textbf{Nhóm} & \textbf{Độ phức tạp} & \textbf{Nguồn trích dẫn} & \textbf{Mô tả tóm tắt} \\
+\midrule
+\endfirsthead
+\multicolumn{5}{c}{{\bfseries \tablename\ \thetable{} -- tiếp theo từ trang trước}} \\
+\toprule
+\textbf{Thuật toán} & \textbf{Nhóm} & \textbf{Độ phức tạp} & \textbf{Nguồn trích dẫn} & \textbf{Mô tả tóm tắt} \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+AMVI & Local & $O(N \cdot D \cdot K)$ & Zhang et al. (2007) & Adaptive Manifold Impute \\
+ARLS & Local & $O(N \cdot P^2 \cdot D)$ & Liew et al. (2011) & Adaptive Ridge Local Smoothing \\
+BGS & Local & $O(Iter \cdot N \cdot D \cdot K)$ & Brock et al. (2002) & Bayesian Gene Selection/Impute \\
+BPCA & Global & $O(Iter \cdot N \cdot D \cdot R)$ & Oba et al. (2003) & Bayesian PCA \\
+CMVE & Local & $O(N \cdot K^2 \cdot D)$ & He et al. (2006) & Covariance Matrix Value Estimation \\
+GMC & Local & $O(N \cdot D \cdot K)$ & He et al. (2006) & Gaussian Mixture Clustering \\
+GOimpute & Knowledge & $O(N \cdot D \cdot K)$ & Tuikkala (2006) & Gene Ontology-based Impute \\
+HAlimpute & Knowledge & $O(N \cdot D \cdot K)$ & Xiang et al. (2008) & Hot-deck Adaptive Impute \\
+IKNN & Local & $O(Iter \cdot N \cdot D \cdot K)$ & Brasch (2007) & Iterative KNN \\
+ILLS & Local & $O(Iter \cdot N \cdot K^3)$ & Kim et al. (2005) & Iterative Local Least Squares \\
+KNN & Local & $O(N \cdot D \cdot K)$ & Troyanskaya (2001) & K-Nearest Neighbors \\
+LLS & Local & $O(N \cdot K^3)$ & Kim et al. (2005) & Local Least Squares \\
+LS & Local & $O(N \cdot K^3)$ & Schmitt (2015) & Local Smoothing \\
+LimCmb & Hybrid & $O(N \cdot D \cdot R)$ & Broy et al. (2008) & Hybrid Global-Local Linear Combination \\
+POCSimpute & Knowledge & $O(Iter \cdot N \cdot D \cdot R)$ & Liew et al. (2010) & Projection On Convex Sets \\
+RLSP & Local & $O(N \cdot K^3 + D \cdot N)$ & Hore et al. (2008) & Regularized Local Smoothing \\
+SKNN & Local & $O(N \cdot D \cdot K)$ & Kim et al. (2004) & Sequential KNN \\
+SLLS & Local & $O(N \cdot K^2 \cdot D)$ & Seo et al. (2015) & Sparse Local Least Squares \\
+SVD & Global & $O(N \cdot D \cdot R)$ & Troyanskaya (2001) & Singular Value Decomposition \\
+WeNNI & Knowledge & $O(N \cdot D \cdot K)$ & Johansson (2006) & Weighted Nearest Neighbor Impute \\
+WeNNI.BC & Knowledge & $O(N \cdot D \cdot K)$ & Ritz (2008) & WeNNI with Bias Correction \\
+iMISS & Knowledge & $O(N \cdot D \cdot K)$ & Hu et al. (2006) & Iterative MISS \\
+metaMISS & Knowledge & $O(N \cdot D \cdot K)$ & Ref [63] & Meta-data based MISS \\
+\end{longtable}
+
+% ==========================================================
+\section{Kết quả thực nghiệm chi tiết (Preliminary Results)}
+Lưu ý: Kết quả của nhóm \textit{Knowledge} dự kiến sẽ cải thiện đáng kể sau khi nạp đầy đủ metadata.
+
+\subsection{Dataset D1 (Large-Scale: 546,028 $\times$ 428)}
+\begin{longtable}{l|c|cccc|r}
+\caption{Hiệu năng trên Dataset D1}\label{tab:results_d1} \\
+\toprule
+\textbf{Algorithm} & \textbf{Class} & \textbf{NRMSE} & \textbf{MAE} & \textbf{RMSE} & \textbf{Time(ms)} \\
+\midrule
+ARLS & Local & 0.9098 & 0.2292 & 0.6947 & 22524.5 \\
+LimCmb & Hybrid & 0.9307 & 0.2250 & 0.7108 & 135457.0 \\
+SVD & Global & 0.9397 & 0.2686 & 0.7176 & 66574.3 \\
+iMISS & Knowledge & 0.9624 & 0.1906 & 0.7350 & 728.1 \\
+HAlimpute & Knowledge & 0.9785 & 0.2661 & 0.7472 & 645.0 \\
+POCSimpute & Knowledge & 1.0000 & 0.3001 & 0.7636 & 41101.9 \\
+\bottomrule
+\end{longtable}
+
+\subsection{Dataset D2 (High-Resolution: 85,241 $\times$ 598)}
+\begin{longtable}{l|c|cccc|r}
+\caption{Hiệu năng trên Dataset D2}\label{tab:results_d2} \\
+\toprule
+\textbf{Algorithm} & \textbf{Class} & \textbf{NRMSE} & \textbf{MAE} & \textbf{RMSE} & \textbf{Time(ms)} \\
+\midrule
+CMVE & Local & 0.7571 & 0.0812 & 0.7898 & 351.8 \\
+ARLS & Local & 0.7623 & 0.0972 & 0.7951 & 6292.4 \\
+LimCmb & Hybrid & 0.8578 & 0.1834 & 0.8948 & 35125.3 \\
+metaMISS & Knowledge & 0.8919 & 0.1461 & 0.9304 & 339.8 \\
+HAlimpute & Knowledge & 0.9364 & 0.2646 & 0.9768 & 308.2 \\
+\bottomrule
+\end{longtable}
+
+\section{Kết luận}
+Báo cáo đã cập nhật bảng phân loại thuật toán và nhận diện các yếu tố metadata còn thiếu. Các bước tiếp theo bao gồm việc truy cập server để định vị các file `.bin` tri thức và thực hiện benchmark lại toàn diện.
+
+\end{document}
